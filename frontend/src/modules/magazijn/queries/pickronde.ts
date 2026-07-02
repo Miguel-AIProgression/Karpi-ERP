@@ -7,15 +7,6 @@ export interface MarkeerNietGevondenArgs {
   pickerId: number | null
 }
 
-export async function startPickronde(orderId: number, pickerId: number): Promise<number> {
-  const { data, error } = await supabase.rpc('start_pickronde', {
-    p_order_id: orderId,
-    p_picker_id: pickerId,
-  })
-  if (error) throw toError(error, 'Pickronde starten mislukt')
-  return Number(data)
-}
-
 // Mig 518: 3-arg-RPC (modus weg). Zet één colli op 'niet_gevonden' + opmerking;
 // het afsplitsen naar Manco gebeurt bij voltooi_pickronde — niet-gevonden
 // blokkeert de zending niet meer.

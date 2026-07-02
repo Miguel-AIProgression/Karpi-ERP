@@ -1,5 +1,135 @@
 # Changelog — RugFlow ERP
 
+## 2026-07-02 — CLAUDE.md ontvlochten naar module-kaart + afgedwongen docs-discipline (branch docs/claude-md-ontvlechting)
+
+CLAUDE.md was 160 KB gegroeid (71 bedrijfsregel-bullets, 82% van het bestand); een
+steekproef-audit toonde dat 14 van 15 gecheckte bullets volledig elders gedocumenteerd
+waren, met intern verval als gevolg (twee tegenstrijdige "Universele bevestig-knop"-bullets).
+**Ontvlechting:** de bullets zijn vervangen door 7 module-docs in `docs/modules/`
+(orders, snijplanning, voorraad-inkoop, magazijn-pickship, logistiek-verzending,
+facturatie, edi) — elk met kernbestanden-tabel, geldende ADR's, huidige-staat-bedrijfsregels
+en de behouden gotcha-laag ("niet te verwarren met", "bewust niet gebouwd",
+deploy-volgordes). CLAUDE.md is nu een dunne index (~13 KB) met module-kaart-tabel.
+**Onderhoudsdiscipline afgedwongen:** nieuwe pre-commit-hook
+(`scripts/git-hooks/pre-commit`, actief via `git config core.hooksPath scripts/git-hooks`)
+blokkeert commits die `supabase/migrations|functions/` of `frontend/src/` raken zonder
+docs-wijziging; override via `KARPI_SKIP_DOCS_CHECK=1`. Regel: vervangen, niet stapelen.
+**Correcties en passant (code-geverifieerd door de schrijf-agents):** bevestig-knop-
+tegenspraak beslecht in het voordeel van besluit 2026-06-11 (EDI zonder actieve
+orderbev-toggle → e-mail); BTW-regelingen sinds mig 550 versmald naar 3
+(`eu_b2b_binnenland_afwijking` vervallen); pakbon gaat sinds 25-06 als losse mail;
+ADR-0027 (claim-swap) gemarkeerd als superseded door mig 497-502; ADR-0003 kreeg een
+deels-achterhaald-notitie (Manco mig 518, RPC-drop mig 581). Nieuw gedocumenteerd wat
+nergens stond: de `afl_gln`-startbaarheidsgate (mig 543/544) en mig 549's
+manco-pickbaarheidsfix.
+
+## 2026-07-02 — Facturen per order bij bundel-zending (ADR-0041, mig 578)
+
+**Klanteis (Miguel):** "Facturen moeten apart gefactureerd worden en mogen
+niet verzameld worden. Dus als verschillende orders gebundeld worden wel
+aparte facturen (per order). En pakbon mag wel verzameld worden maar wel
+duidelijk welke artikelen bij welke order horen." Combi-levering (ADR-0039/
+0040) bundelt orders van klanten zoals SB Möbel Boss in één zending zodra
+hun cumulatieve waarde de vrachtvrije-drempel haalt — die bundel kreeg tot
+nu toe (ADR-0010) één factuur voor alle orders samen.
+
+**Beslissing (ADR-0041, supersedes het factuur-deel van ADR-0010):**
+factuur-granulariteit verschuift van zending naar (zending, order). Elke
+order in een bundel-zending krijgt zijn eigen concept-factuur, finalisatie
+en mail/EDI-INVOIC. De verzendkosten-drempel-toets blijft bundel-breed
+(ADR-0010's oorspronkelijke motief, nog steeds geldig) maar de grondslag
+komt nu uit `order_regels` over **alle** orders van de zending, **zonder**
+gefactureerd-filter — anders zou de uitkomst afhangen van welke factuur al
+gefinaliseerd is. De verzendkosten-drager krijgt DREMPELKORTING (drempel
+gehaald) of behoudt zijn VERZEND-regel; zusterorders krijgen BUNDELKORTING
+op hun eigen VERZEND-regel, **mits die bestaat** — een bewuste
+gedragscorrectie: het oude bundel-pad crediteerde BUNDELKORTING ook aan
+orders zónder eigen VERZEND-regel (korting voor nooit-gefactureerde kosten;
+op een echte 8-order-zending €210 te weinig gefactureerd — zie ADR-0041).
+Som van N per-order-facturen kan daarnaast op centen afwijken van de oude
+ene bundel-factuur door per-factuur-BTW-afronding (gemeten €0,02 op 8).
+De pakbon was al per-order-gegroepeerd (bestond al, geen wijziging) —
+elke order-factuur van een bundel krijgt dezelfde bundel-pakbon als bijlage.
+
+**Migratie 578:** `factuur_queue.order_id` (NULL = legacy/wekelijks);
+dedup-index verschoven van `(zending_id)` naar `(zending_id, order_id)`;
+`projecteer_concept_factuur`/`finaliseer_concept_factuur` krijgen 3e
+parameter `p_order_id DEFAULT NULL`; `claim_factuur_queue_items` retourneert
+`order_id` erbij. Deploy-window-vangnet: `finaliseer_concept_factuur` valt
+bij `p_order_id IS NULL` terug op een `factuur_queue`-lookup zodat een
+edge-function-deploy die nog met de oude 2-argument-vorm aanroept toch maar
+één order flipt, niet de hele bundel.
+
+**Edge function `factuur-verzenden/index.ts`:** geclaimde-item-type kreeg
+`order_id`; beide RPC-aanroepen in het per_zending-pad geven
+`p_order_id: item.order_id ?? null` mee. `genereerPakbonBijlagen` ongewijzigd.
+
+**Buiten scope:** het wekelijkse pad (`genereer_factuur_voor_week`) —
+alle 135 combi-klanten staan op `factuurvoorkeur='per_zending'` (live
+gecheckt 02-07), slechts 2 niet-combi-debiteuren op 'wekelijks'.
+## 2026-07-02 — Architectuur-audit-remediatie (branch fix/audit-remediatie; mig 581-584 LIVE)
+
+Uitkomst van de multi-agent architectuur-audit (plan + voortgangslog:
+`docs/superpowers/plans/2026-07-02-audit-remediatie-*.md`). Doel: de twee
+foutklassen dichten waardoor agents verdwalen — verspreide logica die bij
+elkaar hoort, en valse koppelingen/dode paden.
+
+**Bugfixes (frontend):** B1 BevestigingBadge gebruikt `isOrderBevestigd`
+(EDI-orders toonden "Geen OB" na ORDRSP); B2 claim-status `'verzonden'`
+(mig 468) telt mee als dekking (vals "Wacht op nieuwe inkoop" op
+Deels-verzonden-orders); B3 VORMTOESLAG-companion volgt zijn maatwerk-parent
+bij gemengde/IO-order-splits (mig 465-conventie); B5 PO-prefill zet het
+regel-input-contract (`metProductVelden` — ORD-2026-0614-klasse).
+
+**Live DB:** mig 581 dropt 5 dode RPC's (start_pickronden_voor_order/_bundel,
+genereer_factuur_voor_bundel, start_pickronde, create_zending_voor_order —
+drievoudig geverifieerd); mig 582 (B6) laat 'Wacht op voorraad' vereisen dat
+claims het tekort dekken (mig 470-semantiek; impact bij apply: 0 orders);
+mig 583/584 = golden-contract-asserts voor `bepaal_btw_regeling`/
+`effectief_btw_pct` en `verzendweek_voor_datum` — SQL==TS bewezen, mig
+385-conventie.
+
+**Structureel:** schema-snapshot `supabase/schema/functies.sql`+`views.sql`
+(gegenereerd, `node scripts/dump-schema.mjs`) is voortaan de canonieke bron
+voor live functie-bodies — de handmatige RPC→migratie-tabel in
+order-lifecycle.md §3.3 is vervangen (was verouderd voor 7 kern-RPC's; de
+mig-428-klasse "oude body herbouwd" is hiermee structureel gedicht);
+§3.4 documenteert het volledige trigger-landschap op order_regels (10
+triggers, live geverifieerd). Dode code verwijderd: assignRolToSnijplan/
+useAssignRol + createSnijplan/updateSnijplanStatus (VERR130-risicovorm),
+useStartPickronde-keten, FFDH-packAcrossRolls → test-driver.
+compute-reststukken frontend-kopie → echte ADR-0033-shim (kern bleek
+byte-identiek); reststuk-score (ADR-0025) naar één module; VervoerderType
+één bron gespiegeld aan de DB-CHECK (3 afwijkende unions geconsolideerd,
+ADR-0034-addendum); zending-status-predicaten ('Gepland'-collision met
+snijplan_status); drift-test ACTIVE_ORDER_STATUSES (vond ontbrekende
+'Concept' → open-orders-telling vertegenwoordigers telt Concept nu mee —
+gedragskeuze, omzet onaangeroerd). Docs-correcties: CONTEXT.md
+(transportorder-tabellen zijn gedropt), ADR-0031-addendum Verhoek-relay,
+deploy-fan-out-manifest `supabase/functions/DEPLOY.md`, vindregel
+query-lagen in architectuur.md. dump-schema via Node (PS5.1-mojibake +
+Node-.cmd-EINVAL omzeild).
+## 2026-07-02 — Pick & Ship: zoeken op zending-nummer (frontend-only, LIVE)
+
+**Verzoek Miguel 01-07:** in Pick & Ship ook kunnen zoeken op zending-nummer,
+inclusief zendingen die al 'Klaar voor verzending' staan (die orders vallen
+normaal uit `pick_ship_zichtbaar` en waren dus onvindbaar zodra de pickronde
+voltooid was).
+
+**Implementatie (puur frontend, geen migratie):** tijdens zoeken haalt
+`fetchPickShipOrders` per open order de zending-nummers op van zendingen met
+status Gepland/Picken/Klaar voor verzending (nieuwe helper
+`fetchZendingNrsPerOrder`, bundel-aware via `zending_orders` M2M, gechunkt
+tegen de PostgREST-rijencap) — als 5e parallelle fetch, alléén wanneer er een
+zoekterm is. `filterPickShipOrders` matcht daarnaast op `zending_nrs`. De
+zichtbaarheids-gate laat een niet-`pick_ship_zichtbaar`-order alleen door als
+er gezocht wordt én de order nog een niet-verzonden zending heeft; de
+tekst-match beslist daarna of het een echte treffer is. Buiten zoeken is het
+gedrag byte-identiek aan voorheen. Nieuw veld `PickShipOrder.zending_nrs`
+(alleen gevuld tijdens zoeken). Oorspronkelijk WIP uit de hoofd-working-tree
+(veiliggesteld op `wip/hoofdmap-2026-07-02`), geport naar de actuele main
+bovenop combi-levering/GLN-gates/manco.
+
 ## 2026-07-02 — Volledig inkoopproces: transactioneel aanmaken, regel-mutaties met Claim-vloer, ontvangst met locatie, portal-huishouding
 
 - **Mig 601 `create_inkooporder`**: transactioneel aanmaken (header+regels in één RPC) — de oude 3-losse-inserts-flow kon een lege order achterlaten. UI kan nu ook `eenheid='stuks'`-regels maken (antislip-regel mig 408 was via de UI onbereikbaar). Besteldatum default CURRENT_DATE (kolom is NOT NULL).

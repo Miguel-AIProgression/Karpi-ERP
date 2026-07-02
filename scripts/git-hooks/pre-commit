@@ -1,0 +1,44 @@
+#!/bin/sh
+# Docs-discipline-poort (2026-07-02, docs-ontvlechting):
+# een commit die code of migraties raakt zonder enige docs-wijziging wordt geblokkeerd.
+# De levende docs (docs/modules/, changelog, database-schema) zijn de bron van waarheid
+# die CLAUDE.md's oude Bedrijfsregels-bullets vervangt — dit dwingt het bijwerken af.
+#
+# Bewust omzeilen (echt triviale wijziging): KARPI_SKIP_DOCS_CHECK=1 git commit ...
+# Activering per clone/worktree-boom: git config core.hooksPath scripts/git-hooks
+
+[ -n "$KARPI_SKIP_DOCS_CHECK" ] && exit 0
+
+# Merge- en rebase-commits nooit blokkeren
+git_dir=$(git rev-parse --git-dir)
+[ -f "$git_dir/MERGE_HEAD" ] && exit 0
+[ -d "$git_dir/rebase-merge" ] || [ -d "$git_dir/rebase-apply" ] && exit 0
+
+staged=$(git diff --cached --name-only)
+
+# Alleen relevant als er code/migraties/edge-functions gewijzigd zijn
+echo "$staged" | grep -qE '^(supabase/(migrations|functions)/|frontend/src/)' || exit 0
+
+# Zachte reminder: migratie zonder verse schema-snapshot
+if echo "$staged" | grep -q '^supabase/migrations/' && \
+   ! echo "$staged" | grep -q '^supabase/schema/'; then
+  echo "let op: migratie gewijzigd zonder supabase/schema/ — ververs zo nodig via: node scripts/dump-schema.mjs" >&2
+fi
+
+# Harde poort: enige docs-wijziging vereist
+echo "$staged" | grep -qE '^(docs/|CLAUDE\.md|CONTEXT\.md)' && exit 0
+
+cat >&2 <<'EOF'
+
+COMMIT GEBLOKKEERD: code/migratie gewijzigd zonder docs-update.
+
+Werk minimaal bij (zie de module-indextabel in CLAUDE.md):
+  - docs/modules/<module>.md   -> bedrijfsregels/gotcha's van de geraakte module
+  - docs/changelog.md          -> datum + wat + waarom
+  - docs/database-schema.md    -> bij tabel/kolom/RPC-wijzigingen
+
+Echt triviaal (typo, comment)? Omzeil bewust met:
+  KARPI_SKIP_DOCS_CHECK=1 git commit ...
+
+EOF
+exit 1

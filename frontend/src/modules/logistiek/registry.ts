@@ -13,8 +13,13 @@
 // allebei worden bijgewerkt. De mig 170-placeholders edi_partner_a/b zijn
 // vervangen door rhenus_sftp/verhoek_sftp.
 
+// VervoerderType leeft sinds 2026-07-02 op één plek (audit-fix, spiegelt de
+// DB-CHECK vervoerders_type_check, mig 424) — zie
+// _shared/vervoerders/vervoerder-type.ts. Re-export hier voor back-compat.
+import type { VervoerderType } from '@/lib/logistiek/vervoerder-type'
+export type { VervoerderType }
+
 export type VervoerderCode = 'hst_api' | 'rhenus_sftp' | 'verhoek_sftp' | 'eigen_vervoer'
-export type VervoerderType = 'api' | 'edi' | 'sftp' | 'eigen'
 export type VervoerderBadgeKleur = 'blauw' | 'oranje' | 'paars' | 'grijs'
 
 export interface VervoerderDef {

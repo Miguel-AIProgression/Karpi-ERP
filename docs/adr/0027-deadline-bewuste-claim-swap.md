@@ -1,9 +1,17 @@
 ---
-status: accepted
+status: superseded
 date: 2026-05-20
+superseded-by: mig 497-502 (handmatig allocatie-keuze-systeem) — zie docs/modules/voorraad-inkoop.md
 ---
 
 # Deadline-bewuste claim-swap — voorraad volgt urgentie zonder claim-volgorde-prio volledig op te geven
+
+> **Superseded (2026-06-24, mig 497):** de automatische claim-swap en de auto-cascade zijn uit
+> `herallocateer_orderregel` verwijderd; de functie doet nog uitsluitend stap 1 (eigen voorraad).
+> Vervanging: handmatige keuze via `allocatie_opties_voor_artikel` → `set_allocatie_keuze` /
+> `ontgrendel_allocatie_keuze` (mig 497-502; volledige cascade alleen nog via
+> `herallocateer_orderregel_auto`). Zie [docs/modules/voorraad-inkoop.md](../modules/voorraad-inkoop.md)
+> en `docs/order-lifecycle.md` §7. De tekst hieronder is audit-trail.
 
 ## Context
 

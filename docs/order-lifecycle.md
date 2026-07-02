@@ -3,8 +3,10 @@
 > **Levend document** (aangemaakt 2026-06-10). Dit is de toetssteen voor elke wijziging
 > die de order-flow raakt: statussen, transities, gates, intake, productie, magazijn.
 > Werk het bij wanneer een migratie een transitie/gate toevoegt of wijzigt.
-> Vuistregel bij RPC's: **de hoogst-genummerde migratie met `CREATE OR REPLACE` wint** —
-> zie §3.3 voor de actuele eigenaar per RPC.
+> Vuistregel bij RPC's: de actuele body staat in `supabase/schema/functies.sql`
+> (of via `pg_get_functiondef` op de live DB) — NIET in de migratiebestanden;
+> zie §3.3. "Hoogst-genummerde migratie wint" is onbetrouwbaar gebleken
+> (hernummeringen bij merges — audit 2026-07-02).
 
 ## 1. De hoofdflow
 
@@ -78,24 +80,58 @@ Afgedwongen door [`scripts/lint-no-direct-orders-status-update.sh`](../scripts/l
 | [`308_concept_order_status.sql:126`](../supabase/migrations/308_concept_order_status.sql) | `bevestig_concept_order`: directe `UPDATE` + events-INSERT op **niet-bestaande kolom `actor`** (crashte bij elke bevestiging) | **Opgelost in mig 354** (via `_apply_transitie`; bevinding B3) |
 | `import_productie_only_order` (mig 329) | directe INSERT met status `'In productie'` | bewust: legacy-status, `herbereken` raakt hem niet aan |
 
-### 3.3 RPC → actuele definitie (hoogst-genummerde migratie wint)
+### 3.3 Welke functie-body is actueel?
 
-| RPC | Laatste definitie | Eerdere versies |
-|---|---|---|
-| `create_order_with_lines` | **mig 275** (status `'Klaar voor picken'`) | 152, 245 |
-| `create_edi_order` | **mig 357** (status `'Klaar voor picken'` definitief) | 158, 159, 166, 275 (string-patch), 309, 312 |
-| `bevestig_concept_order` | **mig 354** (via `_apply_transitie`; 308-versie crashte) | 308 |
-| `match_edi_artikel` | **mig 349** (maat-suffix-guard) | 159, 162 |
-| `create_webshop_order` | **mig 343** (`maatwerk_vorm`) | 085, 086, 087, 092, 093, 308, 322 |
-| `herbereken_wacht_status` | **mig 565** (ADR-0040: 2e param `p_cascade_groep`, Combi-levering-groep-herwaardering) | 218, 258, 267, 275, 346, 351, 352, 468 |
-| `derive_wacht_status` (pure ladder) | **mig 564** (ADR-0040: 5e param `p_wacht_op_combi_levering`) | 346, 352, 470, 540 |
-| `update_order_with_lines` | **mig 572** (audit 02-07: roept ná elke edit `herbereken_wacht_status` aan — dekt ook prijs-/korting-only-edits en regel-verwijdering, die de INSERT/UPDATE-triggers niet vangen; bij een adres-/debiteurwijziging herevalueert óók de verlaten Combi-levering-groep via `herbereken_combi_groep`) | — |
-| `start_deelzending` | **mig 573** (audit 02-07: `EXCEPTION` op status `'Wacht op combi-levering'` — deelzending was een stille omzeilroute om de drempel-toets/VERZEND-regel te omzeilen) | 413, 473 |
-| `voltooi_confectie` | **mig 348** (`_apply_transitie`) | 101, 247, 250, 330 |
-| `voltooi_pickronde` | **mig 258** (bundel-aware + `Deels verzonden`-split) | 217, 218, 222 |
-| `voltooi_pickronden` (bulk) | **mig 414** (gedraaid als 412; loopt over zendingen → `voltooi_pickronde`, per-zending savepoint) | — |
-| `start_pickronden` (unified) | **mig 373** (geen-vervoerder-guard) | 220, 222, 248, 258 |
-| `sync_order_afleverdatum_met_claims` | **mig 355** (`Maatwerk afgerond` eindstatus) | 153, 298 |
+**Kijk NOOIT in `supabase/migrations/` voor de actuele body van een functie**
+— dezelfde functie is daar tot 16× herdefinieerd (`genereer_factuur`), de
+bestandsnummers lopen niet 1-op-1 met de toepassingsvolgorde (hernummeringen
+bij merges), en de handmatige RPC→migratie-tabel die hier stond was zelf
+verouderd voor 7 van de kern-RPC's (audit 2026-07-02 — o.a.
+`herbereken_wacht_status` stond op mig 352 terwijl mig 468/470 de live body
+droegen; `create_order_with_lines` op 275 terwijl 481/542 wonnen). Precies zo
+ontstond de mig-428-BTW-regressie: een nieuwe RPC herbouwde een oude
+migratie-body i.p.v. de live versie.
+
+De canonieke bron is de gegenereerde snapshot:
+
+    supabase/schema/functies.sql + views.sql
+    (ververs met: node scripts/dump-schema.mjs)
+
+Ad-hoc één functie checken kan ook rechtstreeks:
+`supabase db query --linked -o json "SELECT pg_get_functiondef(p.oid) FROM
+pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE
+n.nspname='public' AND p.proname='<functie>'"` — maar werk NOOIT vanaf een
+migratiebestand. Wie een functie wijzigt: nieuwe migratie schrijven **vanaf
+de live/snapshot-body**, applyen (`supabase db query --linked -f`), snapshot
+verversen, beide committen. Migratiebestanden zijn write-once-geschiedenis
+(het "waarom"); de snapshot is de actuele staat (het "wat"). De per-RPC-
+wijzigingsgeschiedenis blijft vindbaar via `git log -S <functienaam> --
+supabase/migrations/` en docs/changelog.md — een handmatige tabel is niet
+meer nodig (bewijs: de laatste versie ervan miste 7 kern-RPC's en werd één
+dag na de audit alweer ingehaald door mig 565/572/573).
+
+## 3.4 Trigger-landschap op `order_regels` (live geverifieerd 2026-07-02)
+
+Een `INSERT`/`UPDATE`/`DELETE` op `order_regels` kan tot **10** triggers laten
+vuren. AFTER-triggers vuren alfabetisch op triggernaam — let op:
+`trg_order_regels_…` sorteert vóór `trg_orderregel_…`. Volledige lijst
+(bron: `pg_trigger` op de live DB; definities in `supabase/schema/functies.sql`):
+
+| Trigger | Vuurt op |
+|---|---|
+| `order_regels_sync_unmatched` | AFTER I/D/U OF `artikelnr` |
+| `order_regels_totalen` | AFTER INSERT/DELETE/UPDATE |
+| `order_regels_updated_at` | BEFORE UPDATE |
+| `trg_auto_maatwerk` | BEFORE INSERT |
+| `trg_auto_snijplan` | AFTER INSERT |
+| `trg_auto_sync_snijplan_maten` | AFTER UPDATE OF `maatwerk_lengte_cm`, `maatwerk_breedte_cm`, `is_maatwerk` |
+| `trg_lock_orderregel_vervoerder` | BEFORE UPDATE OF `vervoerder_code` (guard, blokkeert) |
+| `trg_order_regels_maatwerk_kw_fallback` | BEFORE INSERT/UPDATE |
+| `trg_order_regels_prijs_gate` | AFTER I/D/U OF `prijs`, `korting_pct`, `artikelnr` |
+| `trg_orderregel_herallocateer` | AFTER INSERT/DELETE/UPDATE (élke kolom) → `herallocateer_orderregel` → claims + `herwaardeer_order_status` |
+
+Wie een orderregel-UPDATE debugt: dit is de volledige set — een agent die er
+maar één of twee kent, mist cascades.
 
 ## 4. `herbereken_wacht_status` — beslislogica (mig 564/565, ADR-0040)
 
@@ -158,6 +194,7 @@ een afgeronde maatwerk-order op `Wacht op maatwerk` staan terwijl hij al pickbaa
 | `trg_enqueue_factuur_op_event` | `pickronde_voltooid` + `status_na='Verzonden'` | factuur op queue (voorkeur per_zending/wekelijks) | mig 223 |
 | `trg_order_events_reservering_release` | `geannuleerd` | alle actieve claims → `released` | mig 255 |
 | `trg_order_events_snijplan_release` | `geannuleerd` | **alle** snijplannen → `'Geannuleerd'` (ongeacht voortgang) + rollen vrijgeven met NOT-EXISTS-guard | mig 290 |
+| `trg_order_events_zending_release` | `geannuleerd` | verwijdert per zending met status `'Gepland'`/`'Picken'` de regels/colli van DE geannuleerde order; bundel-bewust (zending blijft bestaan met herberekende `aantal_colli`/`totaal_gewicht_kg` als een andere order 'm nog draagt) | mig 480 |
 
 Listeners vuren onafhankelijk en moeten idempotent zijn. Nieuwe cascade-effecten =
 nieuwe listener op `order_events`, géén edit in de command-RPC's.
@@ -172,14 +209,15 @@ nieuwe listener op `order_events`, géén edit in de command-RPC's.
 | Concept (e-mail-review) | `status='Concept'` (status, geen kolom-gate) | `poll-email-orders` via `p_initieel_status` | `bevestig_concept_order` → `Klaar voor picken` | status-filter | **Ja** — allocator + snijplan gegate tot bevestiging (mig 308) |
 | EDI "Te koppelen" | `edi_berichten.order_id IS NULL` (vóór order-bestaan) | `transus-poll` bij GLN-mismatch | `koppel_edi_afleveradres` / `koppel_edi_debiteur_alias` | [`te-koppelen.ts`](../frontend/src/modules/edi/lib/te-koppelen.ts) | n.v.t. — er ís nog geen order |
 | Afleveradres ontbreekt | `afl_adres_incompleet_sinds` | BEFORE-trigger `trg_orders_afl_adres_gate` bij leeg afl_naam/adres/postcode/plaats (niet-afhaal, mig 395) | adres aanvullen (trigger wist auto) | [`afleveradres-gate.ts`](../frontend/src/lib/orders/afleveradres-gate.ts) | **Ja** — `start_pickronden` weigert via `_valideer_intake_gates`; herhaalbaar |
+| Aflever-GLN ongekoppeld | `afl_gln_ongekoppeld_sinds` + `afl_gln_gecontroleerd_op` | trigger `trg_orders_afl_gln_gate` bij EDI-order met aflever-GLN zonder vestiging-match (`_afl_gln_matcht_vestiging`, mig 543/544) | GLN aan afleveradres koppelen (trigger wist op álle wachtende orders) of `markeer_afleveradres_gecontroleerd` | view `edi_orders_afleveradres_ongekoppeld` | **Ja** — tweede van de drie checks in `_valideer_intake_gates` (adres → afl_gln → prijs); zie [modules/edi.md](modules/edi.md) |
 | Prijs ontbreekt | `prijs_ontbreekt_sinds` | AFTER-trigger `trg_order_regels_prijs_gate` bij €0/NULL-regel (niet pseudo/VERZEND, korting<100, mig 396) | `markeer_prijs_geaccepteerd` of prijscorrectie | [`prijs-ontbreekt.ts`](../frontend/src/lib/orders/prijs-ontbreekt.ts) | **Ja** — `start_pickronden` weigert via `_valideer_intake_gates`; herhaalbaar |
 
 Eenmalige gates (EDI-leverweek, debiteur) vs. herhaalbare gate (levertijd) — bewust
 verschillend ontworpen (zie CLAUDE.md, mig 326-toelichting). Alle predicaten hebben
 één bron-van-waarheid-helper; inline duplicaten zijn opgeruimd (intake-consolidatie slice 2).
 
-De intake-gates afleveradres (mig 395) & prijs (mig 396) zijn de enige **blokkerende**
-kolom-gates: ze delen de server-side poort `_valideer_intake_gates(order_ids[])` die
+De intake-gates afleveradres (mig 395), aflever-GLN (mig 543/544) & prijs (mig 396) zijn
+de **blokkerende** kolom-gates: ze delen de server-side poort `_valideer_intake_gates(order_ids[])` die
 `start_pickronden` aanroept ná de bundel-uitbreiding. Detectie zit in DB-triggers (single
 source) zodat álle intake-kanalen gedekt zijn, niet per kanaal. **Productie-only orders
 (`alleen_productie=true`, Basta) zijn uitgesloten van beide gates (mig 397)** — verzending

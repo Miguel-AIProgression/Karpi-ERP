@@ -9,7 +9,7 @@ export type LevertijdStatus =
 export type LeverModus = 'deelleveringen' | 'in_een_keer'
 
 export type ClaimBron = 'voorraad' | 'inkooporder_regel'
-export type ClaimStatus = 'actief' | 'geleverd' | 'released'
+export type ClaimStatus = 'actief' | 'verzonden' | 'geleverd' | 'released'
 
 export interface OrderRegelLevertijd {
   order_regel_id: number
@@ -131,7 +131,10 @@ export async function fetchClaimsVoorOrderRegel(orderRegelId: number): Promise<O
       )
     `)
     .eq('order_regel_id', orderRegelId)
-    .eq('status', 'actief')
+    // mig 468: een claim van een al-verzonden deelzending telt als dekking —
+    // anders toont order-detail een vals 'Wacht op nieuwe inkoop' op
+    // Deels-verzonden-orders.
+    .in('status', ['actief', 'verzonden'])
     .order('bron')
     .order('claim_volgorde')
   if (error) throw error
@@ -210,7 +213,10 @@ export async function fetchClaimsVoorOrder(orderId: number): Promise<OrderClaim[
       )
     `)
     .in('order_regel_id', regelIds)
-    .eq('status', 'actief')
+    // mig 468: een claim van een al-verzonden deelzending telt als dekking —
+    // anders toont order-detail een vals 'Wacht op nieuwe inkoop' op
+    // Deels-verzonden-orders.
+    .in('status', ['actief', 'verzonden'])
     .order('bron')
     .order('claim_volgorde')
   if (error) throw error

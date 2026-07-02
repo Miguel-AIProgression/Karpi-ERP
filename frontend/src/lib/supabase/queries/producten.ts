@@ -1,5 +1,6 @@
 import { supabase } from '../client'
 import { applyProductSearch, filterProductsWordBoundary } from '@/lib/utils/sanitize'
+import type { RegelProductVelden } from '@/lib/orders/order-hydratie'
 
 export type ProductType = 'vast' | 'rol' | 'overig' | 'staaltje'
 export type ProductSortField = 'artikelnr' | 'karpi_code' | 'omschrijving' | 'verkoopprijs' | 'voorraad' | 'vrije_voorraad' | 'aantal_rollen' | 'totaal_oppervlak_m2' | 'locatie'
@@ -191,6 +192,19 @@ export async function fetchBestaandeArtikelnrs(artikelnrs: string[]): Promise<Se
     .in('artikelnr', trimmed)
   if (error) throw error
   return new Set((data ?? []).map(r => r.artikelnr as string))
+}
+
+/** Product-velden voor het regel-input-contract (PO-prefill, ORD-2026-0614-klasse). */
+export async function fetchProductVeldenVoorArtikelnrs(
+  artikelnrs: string[],
+): Promise<Map<string, RegelProductVelden>> {
+  if (artikelnrs.length === 0) return new Map()
+  const { data, error } = await supabase
+    .from('producten')
+    .select('artikelnr, voorraad, vrije_voorraad, besteld_inkoop, is_pseudo, is_dropship')
+    .in('artikelnr', artikelnrs)
+  if (error) throw error
+  return new Map((data ?? []).map(p => [p.artikelnr as string, p as RegelProductVelden]))
 }
 
 /**

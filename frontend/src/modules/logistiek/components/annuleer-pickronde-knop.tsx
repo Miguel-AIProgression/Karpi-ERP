@@ -11,6 +11,7 @@ import { useNavigate } from 'react-router-dom'
 import { Loader2, Undo2 } from 'lucide-react'
 import { useAnnuleerPickronde, useColliVoorZending } from '@/modules/magazijn'
 import { useAuth } from '@/hooks/use-auth'
+import { isZendingGepland, isZendingLopend } from '@/modules/logistiek/lib/zending-status'
 
 interface Props {
   zendingId: number
@@ -30,8 +31,8 @@ export function AnnuleerPickrondeKnop({ zendingId, zendingStatus }: Props) {
 
   // Mig 478: ook een nog-niet-gestarte ('Gepland') deelzending mag terug —
   // zelfs veiliger dan 'Picken' (er is per definitie nog niets gepickt).
-  if (zendingStatus !== 'Gepland' && zendingStatus !== 'Picken') return null
-  const nogNietGestart = zendingStatus === 'Gepland'
+  if (!isZendingLopend(zendingStatus)) return null
+  const nogNietGestart = isZendingGepland(zendingStatus)
 
   // Zodra er iets gepickt/niet-gevonden is, kan terugdraaien niet meer (backend
   // weigert ook). Dan tonen we de knop niet — voltooien is de weg.

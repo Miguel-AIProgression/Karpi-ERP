@@ -1,0 +1,13 @@
+{
+  "_comment": "SQL verzendweek_voor_datum (mig 228, formaat YYYY-Www) == TS verzendWeekSleutel (lib/orders/verzendweek.ts). Zelfde conventie als bundel-sleutel (mig 385). Alle waarden geverifieerd tegen de ISO-8601-standaard (week 1 bevat de eerste donderdag / 4 januari) — geen correcties nodig t.o.v. de aangeleverde set.",
+  "cases": [
+    { "datum": "2026-07-02", "verwacht": "2026-W27" },
+    { "datum": "2026-01-01", "verwacht": "2026-W01" },
+    { "datum": "2025-12-29", "verwacht": "2026-W01" },
+    { "datum": "2026-12-31", "verwacht": "2026-W53" },
+    { "datum": "2027-01-01", "verwacht": "2026-W53" },
+    { "datum": "2027-01-04", "verwacht": "2027-W01" },
+    { "datum": "2026-06-28", "verwacht": "2026-W26" },
+    { "datum": "2026-06-29", "verwacht": "2026-W27" }
+  ]
+}

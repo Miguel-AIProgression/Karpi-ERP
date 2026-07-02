@@ -23,6 +23,7 @@ const KLEUR_STYLES: Record<VervoerderBadgeKleur, string> = {
 const TYPE_OMSCHRIJVING: Record<VervoerderType, string> = {
   api:   'API-koppeling',
   edi:   'EDI-koppeling',
+  print: 'lokale label-printer',
   sftp:  'SFTP-koppeling',
   eigen: 'geen externe koppeling',
 }

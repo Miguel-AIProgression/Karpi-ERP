@@ -71,7 +71,7 @@ export interface PickShipOrder {
   totaal_m2: number
   /** Som van `gewicht_kg × orderaantal` over de view-regels (mig 386) (kg).
    *  0 als gewicht nog onbekend. Indicatief op Pick & Ship; definitieve waarde
-   *  wordt door `create_zending_voor_order` op de zending gezet. */
+   *  wordt door `start_pickronden`/`start_deelzending` op de zending gezet. */
   totaal_gewicht_kg: number
   aantal_regels: number
   /** Mig 386: order-niveau-predicaat uit view `order_pickbaarheid`. Bron voor
@@ -106,6 +106,11 @@ export interface PickShipOrder {
    *  (combi-levering-achtergebleven.ts) als een operator handmatig een subset
    *  van een groep selecteert. */
   combi_levering_deelnemer: boolean
+  /** Zending-nummers van deze order met status t/m 'Klaar voor verzending'
+   *  (dus Gepland/Picken/Klaar voor verzending, NIET Verzonden/Afgehaald/
+   *  Afgeleverd/Geannuleerd). Alleen gevuld tijdens zoeken — dient puur om op
+   *  zending-nr te kunnen zoeken (verzoek Miguel 01-07). */
+  zending_nrs: string[]
 }
 
 export interface ActievePickronde {

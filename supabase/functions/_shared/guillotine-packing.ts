@@ -51,6 +51,8 @@ export {
   AANGEBROKEN_MIN_LENGTE,
   ROND_SNIJ_MARGE,
 } from './reststuk-config.ts'
+// Shape-biased reststuk-scoreformule (ADR-0025): één bron, zie ./reststuk-score.ts.
+import { reststukScore } from './reststuk-score.ts'
 
 // ---------------------------------------------------------------------------
 // Free rectangle tracking
@@ -76,30 +78,21 @@ function qualifiesAsReststuk(fr: FreeRect): boolean {
 }
 
 /**
- * Shape-biased reststuk-score (ADR-0025).
- *
- * `score = area × √(short/long)`. Pure m² is shape-blind: een 150×450
- * (verkoopbaar als tapijt) en een 75×905 (alleen staaltjes-bruikbaar) krijgen
- * bij gelijke area dezelfde score, waardoor de packer onbedoeld voor lange
- * smalle strips kan kiezen. De wortel-weighting straft extreme aspect-ratio's
- * af zonder kwalificerende strips helemaal weg te schrijven:
- *
- *   150×450  → 67500 × √0.333 ≈ 38 950
- *   75×905   → 67875 × √0.083 ≈ 19 550   ← duidelijk minder voorkeur
- *   200×200  → 40000 × √1.000 = 40 000   ← klein vierkant wint van lange strip
+ * Shape-biased reststuk-score (ADR-0025), gesommeerd over alle kwalificerende
+ * vrije rechthoeken van een free-rect-staat — de packer-specifieke
+ * aggregatie bovenop de gedeelde per-rechthoek-formule `reststukScore`
+ * (`./reststuk-score.ts`, single source, spiegelt `compute-reststukken.ts`
+ * backend + frontend zodat de modal dezelfde keuze maakt als de packer).
  *
  * De kwalificatie-drempel (`RESTSTUK_MIN_SHORT/LONG`) blijft 50×100 — smalle
  * strips boven die drempel blijven reststuk, ze trekken alleen geen
- * placement-voorkeur meer aan. Spiegel-formule in `compute-reststukken.ts`
- * (backend + frontend) zodat de modal dezelfde keuze maakt als de packer.
+ * placement-voorkeur meer aan.
  */
 function reststukScoreCm2(freeRects: FreeRect[]): number {
   let total = 0
   for (const fr of freeRects) {
     if (!qualifiesAsReststuk(fr)) continue
-    const short = Math.min(fr.width, fr.height)
-    const long = Math.max(fr.width, fr.height)
-    total += fr.width * fr.height * Math.sqrt(short / long)
+    total += reststukScore(fr)
   }
   return total
 }

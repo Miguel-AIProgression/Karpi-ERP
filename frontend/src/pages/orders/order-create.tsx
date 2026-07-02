@@ -11,6 +11,7 @@ import {
 import { uploadDocument } from '@/lib/supabase/queries/documenten'
 import { usePoParsing } from '@/hooks/use-po-parsing'
 import { fetchSelectedClientVoorPrefill } from '@/lib/supabase/queries/po-parsing'
+import { fetchProductVeldenVoorArtikelnrs } from '@/lib/supabase/queries/producten'
 import { mapMatchNaarPrefill, type PoPrefill } from '@/lib/orders/po-prefill'
 import type { SelectedClient } from '@/components/orders/client-selector'
 
@@ -40,7 +41,16 @@ export function OrderCreatePage() {
     setParsingId(doc.id)
     try {
       const { match } = await poParsing.mutateAsync(doc.file)
-      const mapped = mapMatchNaarPrefill(match)
+      const artikelnrs = match.regels
+        .filter((r) => r.zeker && r.artikelnr)
+        .map((r) => r.artikelnr!)
+      let productVelden
+      try {
+        productVelden = await fetchProductVeldenVoorArtikelnrs(artikelnrs)
+      } catch (fetchErr) {
+        console.warn('PO-prefill: producten-lookup mislukt, regels blijven kaal', fetchErr)
+      }
+      const mapped = mapMatchNaarPrefill(match, productVelden)
       let client: SelectedClient | null = null
       if (mapped.samenvatting.debiteurZeker && mapped.samenvatting.debiteurNr != null) {
         client = await fetchSelectedClientVoorPrefill(mapped.samenvatting.debiteurNr)

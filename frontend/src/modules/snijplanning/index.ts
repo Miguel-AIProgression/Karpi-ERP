@@ -39,10 +39,7 @@ export {
 // Hooks (mutations)
 // ---------------------------------------------------------------------------
 export {
-  useCreateSnijplan,
-  useUpdateSnijplanStatus,
   useBatchUpdateSnijplanStatus,
-  useAssignRol,
   useApproveSnijvoorstel,
   useGenereerSnijvoorstel,
   useKeurSnijvoorstelGoed,
@@ -61,7 +58,7 @@ export {
   useConverteerNaarMaatwerk,
 } from './hooks/use-snijplanning'
 
-export type { CreateSnijplanData, ReststukResult } from './hooks/use-snijplanning'
+export type { ReststukResult } from './hooks/use-snijplanning'
 export type { KandidaatRol } from './queries/handmatige-toewijzing'
 export type { KandidaatRolVoorConversie } from './queries/omzetten-naar-maatwerk'
 
@@ -75,7 +72,6 @@ export { invalidateNaSnijplanMutatie } from './cache'
 // ---------------------------------------------------------------------------
 export type { SnijplanSortField, SortDirection, TekortAnalyseRow, WachtOpInkoopRow, SnijplanStatusCount, SnijGroepSummary, SnijplanningKpis, StickerData } from './queries/snijplanning'
 export { formatVerzendweekShort } from './queries/snijplanning'
-export type { SnijplanFormData } from './queries/snijplanning-mutations'
 export type { AutoPlanningConfig, BenodigdeLengteSchatting, AutoplanGroepResultaat } from './queries/auto-planning'
 export type { MaatwerkHaalbaarheidRow, InkoopRegelInfo } from './queries/haalbaarheid'
 export { useSnijHaalbaarheid } from './hooks/use-snij-haalbaarheid'

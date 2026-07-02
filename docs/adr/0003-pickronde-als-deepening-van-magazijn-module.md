@@ -5,6 +5,13 @@ date: 2026-05-07
 
 # Pickronde als deepening van de Magazijn-Module — zending start in 'Picken', niet 'Klaar voor verzending'
 
+> **Deels achterhaald:** (1) het hieronder beschreven "blokkeer & escaleer / splits"-ontwerp voor
+> niet-gevonden colli is vervangen door het Manco-mechanisme (mig 518/521/522 —
+> `markeer_colli_niet_gevonden` zonder `p_modus`; zie CONTEXT.md **Manco**/**Manco-resolutie** en
+> [docs/modules/magazijn-pickship.md](../modules/magazijn-pickship.md)). (2) De legacy-RPC's
+> `start_pickronden_voor_order`/`start_pickronden_bundel`/`start_pickronde`/`create_zending_voor_order`
+> zijn definitief gedropt in mig 581. De kernbeslissing (zending start in 'Picken') staat onverkort.
+
 ## Context
 
 Sinds migratie 169 heeft de `zending_status`-enum vijf operationele waardes: `Gepland`, `Picken`, `Ingepakt`, `Klaar voor verzending`, `Onderweg`, `Afgeleverd`. In de praktijk werden `Gepland`, `Picken` en `Ingepakt` echter nooit gebruikt: alle paden die een zending creëerden (`create_zending_voor_order` in mig 172, geüpdatet in 176/177/186/206) zetten direct status `Klaar voor verzending`. Dat triggerde de bestaande HST-/EDI-dispatch-trigger (`trg_zending_klaar_voor_verzending`, mig 172) onmiddellijk.

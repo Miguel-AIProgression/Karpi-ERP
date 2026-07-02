@@ -19,7 +19,6 @@ vi.mock('@/lib/supabase/client', () => ({
 }))
 
 import {
-  startPickronde,
   markeerColliNietGevonden,
   herstelColli,
   voltooiPickronde,
@@ -29,30 +28,6 @@ import {
 beforeEach(() => {
   rpcCalls.length = 0
   nextRpcResponse = { data: null, error: null }
-})
-
-describe('startPickronde', () => {
-  it('roept RPC start_pickronde aan met p_order_id + p_picker_id en returnt zending-id', async () => {
-    nextRpcResponse = { data: 42, error: null }
-    const id = await startPickronde(123, 7)
-    expect(rpcCalls).toEqual([
-      { fn: 'start_pickronde', args: { p_order_id: 123, p_picker_id: 7 } },
-    ])
-    expect(id).toBe(42)
-  })
-
-  it('gooit fout met message van Supabase als RPC faalt', async () => {
-    nextRpcResponse = { data: null, error: { message: 'Order bestaat niet' } }
-    await expect(startPickronde(999, 7)).rejects.toThrow('Order bestaat niet')
-  })
-
-  it('mig 217: propageert picker-validatie-fout uit DB (geen actieve picker)', async () => {
-    nextRpcResponse = {
-      data: null,
-      error: { message: 'Medewerker 99 is geen actieve picker', code: '22023' },
-    }
-    await expect(startPickronde(1, 99)).rejects.toThrow(/geen actieve picker/)
-  })
 })
 
 describe('markeerColliNietGevonden', () => {

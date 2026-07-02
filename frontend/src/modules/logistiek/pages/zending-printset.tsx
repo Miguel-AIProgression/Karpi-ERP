@@ -30,6 +30,7 @@ import {
 } from '@/modules/logistiek/lib/handmatig-aanmelden'
 import { ColliBundelDialog } from '@/modules/logistiek/components/colli-bundel-dialog'
 import { useAuth } from '@/hooks/use-auth'
+import { isZendingGepland } from '@/modules/logistiek/lib/zending-status'
 
 type PrintMode = 'all' | 'labels' | 'pakbon' | 'tapijt-stickers'
 
@@ -201,7 +202,7 @@ export function ZendingPrintSetPage() {
           }
         />
 
-        {zending.status === 'Gepland' ? (
+        {isZendingGepland(zending.status) ? (
           <div className="mb-4 rounded-[var(--radius-sm)] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             <div className="mb-1 font-semibold">Deze deelzending is nog niet gestart</div>
             <p>
