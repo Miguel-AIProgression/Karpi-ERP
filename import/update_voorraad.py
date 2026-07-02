@@ -38,6 +38,17 @@ Beslissingen (vastgelegd met Karpi):
     velden NULL -> Karpi verrijkt gewicht/omschrijving/collectie later). Zo
     blijft de FK producten.kwaliteit_code geldig en hoeft niets op NULL.
   - Negatieve vrije voorraad -> clampen naar 0.
+  - HANDMATIGE CORRECTIES (mig 575, 2026-07-02): een handmatige voorraad-
+    wijziging op het product-bewerk-scherm loopt via RPC corrigeer_voorraad_
+    handmatig en wordt gelogd in producten_voorraad_correcties (van/naar/delta/
+    aangemaakt_op). Dit script overschrijft de baseline anders stilletjes en de
+    correctie zou kwijtraken. Bij elke import: open correcties (verwerkt_in_
+    import_op IS NULL) met aangemaakt_op >= lijst-datum (uit de bestandsnaam)
+    zijn door Basta's eigen telling nog niet gezien -> delta wordt bovenop de
+    nieuwe baseline opgeteld en blijft open (kan volgende ronde opnieuw gelden).
+    Correcties van VOOR de lijst-datum zijn al in Basta's nieuwe telling verwerkt
+    -> worden afgesloten (verwerkt_in_import_op gezet), niet nog eens opgeteld.
+    Zo gaat een correctie nooit verloren en telt hij nooit dubbel.
 
 Bestandsformaat: zowel .xls (klassieke export met rode-font-markering via
 xlrd) als .xlsx (nieuwere export via openpyxl). LET OP: de .xlsx-export draagt
@@ -55,6 +66,7 @@ import csv
 import re
 import sys
 from collections import defaultdict
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import xlrd
@@ -259,6 +271,54 @@ def laad_kwaliteiten(sb):
             break
         start += 1000
     return codes
+
+
+_LIJST_DATUM_RE = re.compile(r"(\d{1,2})-(\d{1,2})-(\d{4})")
+
+
+def parse_lijst_datum(pad: Path) -> date:
+    """Best-effort snapshot-datum uit de bestandsnaam (bv. 'Voorraadlijst
+    01-6-2026.xls' -> 2026-06-01). Valt terug op vandaag als het patroon niet
+    matcht -- conservatief: dan blijven ALLE open correcties nog "niet door
+    Basta gezien", dus worden ze toegepast i.p.v. kwijtgeraakt."""
+    m = _LIJST_DATUM_RE.search(pad.stem)
+    if not m:
+        print(f"  WAARSCHUWING: geen datum uit bestandsnaam '{pad.name}' te halen; "
+              f"gebruik vandaag als lijst-datum.")
+        return date.today()
+    d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    return date(y, mo, d)
+
+
+def correctie_al_verwerkt_door_basta(aangemaakt_op_iso: str, lijst_datum: date) -> bool:
+    """True als deze lijst-datum >= de correctie-datum is (Basta's eigen
+    telling was toen al gedaan, kende de correctie dus nog niet -> WEL
+    toepassen zolang dit False blijft; wordt het True, dan sluiten we 'm af).
+    Zie module-docstring 'HANDMATIGE CORRECTIES'."""
+    c_datum = datetime.fromisoformat(aangemaakt_op_iso.replace("Z", "+00:00")).date()
+    return c_datum < lijst_datum
+
+
+def laad_open_voorraad_correcties(sb, artnrs: set) -> dict:
+    """artikelnr -> lijst nog niet afgesloten handmatige correcties (mig 575).
+
+    Elke rij: {id, delta, aangemaakt_op}. 'Open' = verwerkt_in_import_op IS NULL,
+    d.w.z. nog geen eerdere import heeft 'm definitief afgesloten."""
+    out = defaultdict(list)
+    if not artnrs:
+        return out
+    artnr_list = list(artnrs)
+    BATCH = 200
+    for i in range(0, len(artnr_list), BATCH):
+        chunk = artnr_list[i:i + BATCH]
+        r = (sb.table("producten_voorraad_correcties")
+             .select("id,artikelnr,delta,aangemaakt_op")
+             .in_("artikelnr", chunk)
+             .is_("verwerkt_in_import_op", "null")
+             .execute())
+        for x in (r.data or []):
+            out[str(x["artikelnr"])].append(x)
+    return out
 
 
 def laad_rugflow_verzonden_aftrek(sb, vast_set: set) -> dict:
@@ -519,15 +579,32 @@ def main():
     aftrek_artikelen = len(aftrek)
     print(f"  {aftrek_artikelen} artikelen, {aftrek_totaal} stuks aftrekken van baseline")
 
+    # --- Handmatige correcties (mig 575): open correcties van vóór de
+    #     lijst-datum sluiten we af (Basta's telling heeft ze al), van erna
+    #     tellen we bovenop de nieuwe baseline (Basta kende ze nog niet). ---
+    lijst_datum = parse_lijst_datum(pad)
+    print(f"\nLijst-datum (voor correctie-afhandeling): {lijst_datum.isoformat()}")
+    open_correcties = laad_open_voorraad_correcties(sb, vast)
+    print(f"  open handmatige correcties (alle artikelen): "
+          f"{sum(len(v) for v in open_correcties.values())}")
+
     updates = []
     op_0_niet_in_lijst = []
     op_0_uitgesloten = []
+    correcties_toegepast = []   # (artnr, delta)
+    correcties_afgesloten_ids = []
     for artnr in vast:
         if artnr in exclude_artnr:
             op_0_uitgesloten.append(artnr)
         elif artnr in actief:
             baseline = max(0, actief[artnr]["voorraad"])
             aangepast = max(0, baseline - aftrek.get(artnr, 0))
+            for c in open_correcties.get(artnr, []):
+                if correctie_al_verwerkt_door_basta(c["aangemaakt_op"], lijst_datum):
+                    correcties_afgesloten_ids.append(c["id"])
+                else:
+                    aangepast = max(0, aangepast + c["delta"])
+                    correcties_toegepast.append((artnr, c["delta"]))
             updates.append((artnr, aangepast))
         else:
             op_0_niet_in_lijst.append(artnr)
@@ -568,6 +645,10 @@ def main():
     print(f"\n--- RUGFLOW-AFTREK (Verzonden, niet-oud_systeem) ---")
     print(f"  artikelen met aftrek              : {aftrek_artikelen}")
     print(f"  totaal stuks aftrek               : {aftrek_totaal}")
+    print(f"\n--- HANDMATIGE CORRECTIES (mig 575) ---")
+    print(f"  toegepast (na lijst-datum, blijft open)   : {len(correcties_toegepast)}"
+          + (f"  (som delta {sum(d for _, d in correcties_toegepast)})" if correcties_toegepast else ""))
+    print(f"  afgesloten (vóór lijst-datum, Basta had 'm): {len(correcties_afgesloten_ids)}")
     # Top-5 ter controle
     top_aftrek = sorted(aftrek.items(), key=lambda x: -x[1])[:5]
     if top_aftrek:
@@ -681,6 +762,17 @@ def main():
                 "artikelnr", artnrs[i:i + CHUNK]).execute()
         gedaan += len(artnrs)
         print(f"  update voorraad={v}: +{len(artnrs)}  ({gedaan}/{totaal})")
+
+    # --- Handmatige correcties van vóór de lijst-datum afsluiten (mig 575):
+    #     Basta's nieuwe telling heeft ze al verwerkt, dus niet nog eens
+    #     toepassen bij een volgende import. ---
+    if correcties_afgesloten_ids:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        for i in range(0, len(correcties_afgesloten_ids), 100):
+            sb.table("producten_voorraad_correcties").update(
+                {"verwerkt_in_import_op": now_iso}
+            ).in_("id", correcties_afgesloten_ids[i:i + 100]).execute()
+        print(f"  correcties afgesloten: {len(correcties_afgesloten_ids)}")
 
     # --- Ontbrekende kwaliteiten aanmaken (code-only) vóór de product-inserts,
     #     zodat de FK producten.kwaliteit_code -> kwaliteiten geldig blijft. ---
