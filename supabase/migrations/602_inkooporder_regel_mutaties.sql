@@ -37,7 +37,10 @@ DECLARE
   v_geleverd NUMERIC;
 BEGIN
   SELECT status INTO v_status FROM inkooporders WHERE id = p_inkooporder_id FOR UPDATE;
-  IF NOT FOUND OR v_status = 'Geannuleerd' THEN RETURN; END IF;
+  -- Concept nooit stil promoveren: een order in opbouw blijft Concept tot een
+  -- expliciete actie hem op Besteld zet (dormant vandaag — create_inkooporder
+  -- mig 601 zet direct 'Besteld' — maar goedkope robuustheid; spec-review 02-07).
+  IF NOT FOUND OR v_status IN ('Geannuleerd', 'Concept') THEN RETURN; END IF;
 
   SELECT COUNT(*),
          COUNT(*) FILTER (WHERE te_leveren_m > 0),
@@ -269,6 +272,17 @@ BEGIN
      OR EXISTS (SELECT 1 FROM rollen r WHERE r.inkooporder_regel_id = p_regel_id) THEN
     RAISE EXCEPTION 'Regel heeft al ontvangsten — gebruik "Regel annuleren" i.p.v. verwijderen';
   END IF;
+  -- order_reserveringen is append-only historie (claims worden status-geflipt
+  -- naar released/verzonden/geleverd, nooit verwijderd) én de FK
+  -- order_reserveringen.inkooporder_regel_id is ON DELETE RESTRICT — een regel
+  -- die OOIT een claim droeg was operationeel actief en de DELETE zou hoe dan
+  -- ook op een rauwe 23503 FK-fout stranden (live gereproduceerd op regel 401:
+  -- 0 actieve, 4 released claims). De FK nullen zou de audit-koppeling
+  -- vernietigen — weiger dus met een heldere melding; verwijderen is alleen
+  -- voor pure vergissingen zonder enige historie.
+  IF EXISTS (SELECT 1 FROM order_reserveringen orr WHERE orr.inkooporder_regel_id = p_regel_id) THEN
+    RAISE EXCEPTION 'Regel heeft claim-historie (audit-trail) — gebruik "Regel annuleren" i.p.v. verwijderen';
+  END IF;
   IF (SELECT COUNT(*) FROM inkooporder_regels
        WHERE inkooporder_id = v_regel.inkooporder_id) = 1 THEN
     RAISE EXCEPTION 'Laatste regel van de order — annuleer de hele inkooporder i.p.v. de regel te verwijderen';
@@ -283,7 +297,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION herbereken_inkooporder_status(BIGINT) IS
-  'Inkoop-Module (mig 602): status herafleiden uit regels (Ontvangen/Deels ontvangen/Besteld). No-op bij Geannuleerd of 0 regels.';
+  'Inkoop-Module (mig 602): status herafleiden uit regels (Ontvangen/Deels ontvangen/Besteld). No-op bij Geannuleerd, Concept of 0 regels.';
 COMMENT ON FUNCTION voeg_inkooporder_regel_toe(BIGINT, JSONB) IS
   'Inkoop-Module (mig 602): regel toevoegen aan bestaande order, regelnummer=MAX+1. Swap-evaluatie + besteld_inkoop-sync via bestaande triggers.';
 COMMENT ON FUNCTION wijzig_inkooporder_regel(BIGINT, NUMERIC, NUMERIC, BOOLEAN) IS
@@ -291,7 +305,7 @@ COMMENT ON FUNCTION wijzig_inkooporder_regel(BIGINT, NUMERIC, NUMERIC, BOOLEAN) 
 COMMENT ON FUNCTION annuleer_inkooporder_regel(BIGINT, BOOLEAN) IS
   'Inkoop-Module (mig 602): rest van de regel komt niet meer — besteld := geleverd. Delegeert naar wijzig_inkooporder_regel.';
 COMMENT ON FUNCTION verwijder_inkooporder_regel(BIGINT, BOOLEAN) IS
-  'Inkoop-Module (mig 602): regel verwijderen, alleen zonder ontvangsten en nooit de laatste regel. Kale DELETE is verboden (FK snijplannen ON DELETE SET NULL laat anders stille wezen achter).';
+  'Inkoop-Module (mig 602): regel verwijderen, alleen zonder ontvangsten, zonder claim-historie (order_reserveringen is append-only + FK ON DELETE RESTRICT) en nooit de laatste regel. Kale DELETE is verboden (FK snijplannen ON DELETE SET NULL laat anders stille wezen achter).';
 
 GRANT EXECUTE ON FUNCTION herbereken_inkooporder_status(BIGINT) TO authenticated;
 GRANT EXECUTE ON FUNCTION voeg_inkooporder_regel_toe(BIGINT, JSONB) TO authenticated;

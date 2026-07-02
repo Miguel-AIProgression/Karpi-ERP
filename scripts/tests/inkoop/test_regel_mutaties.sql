@@ -10,6 +10,8 @@ DECLARE
   v_regel_stuks BIGINT;
   v_nieuwe_regel BIGINT;
   v_claim RECORD;
+  v_hist_regel BIGINT;
+  v_or_id BIGINT;
 BEGIN
   INSERT INTO leveranciers (naam) VALUES ('TEST regel_mutaties') RETURNING id INTO v_lev_id;
   SELECT * INTO v_io FROM create_inkooporder(
@@ -101,6 +103,30 @@ BEGIN
   END;
   PERFORM verwijder_inkooporder_regel(v_nieuwe_regel, FALSE);
   ASSERT NOT EXISTS (SELECT 1 FROM inkooporder_regels WHERE id = v_nieuwe_regel), 'regel niet verwijderd';
+
+  -- 8b. Verwijderen met claim-HISTORIE (released, geen actieve) → weigeren.
+  -- order_reserveringen is append-only + FK ON DELETE RESTRICT: een kale
+  -- DELETE zou op 23503 stranden. Fabriceer binnen deze rolled-back
+  -- transactie een verse regel met één released historische claim.
+  v_hist_regel := voeg_inkooporder_regel_toe(
+    v_io.inkooporder_id,
+    jsonb_build_object('karpi_code', 'TEST-RM-HIST', 'besteld_m', 5, 'eenheid', 'stuks')
+  );
+  SELECT id INTO v_or_id FROM order_regels LIMIT 1;
+  ASSERT v_or_id IS NOT NULL, 'geen order_regels-rij gevonden voor fabricage';
+  INSERT INTO order_reserveringen (order_regel_id, bron, inkooporder_regel_id, aantal, status)
+  VALUES (v_or_id, 'inkooporder_regel', v_hist_regel, 1, 'released');
+  BEGIN
+    PERFORM verwijder_inkooporder_regel(v_hist_regel, TRUE);
+    RAISE EXCEPTION 'TEST FAILED: verwijderen met claim-historie geaccepteerd';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE 'TEST FAILED%' THEN RAISE; END IF;
+    ASSERT SQLERRM LIKE '%claim-historie%', format('verkeerde melding: %s', SQLERRM);
+  END;
+  ASSERT EXISTS (SELECT 1 FROM inkooporder_regels WHERE id = v_hist_regel), 'regel met historie toch verwijderd';
+  -- Annuleren blijft de juiste route voor deze regel (sluit 'm voor stap 9)
+  PERFORM annuleer_inkooporder_regel(v_hist_regel, FALSE);
+  ASSERT (SELECT te_leveren_m FROM inkooporder_regels WHERE id = v_hist_regel) = 0, 'historie-regel niet geannuleerd';
 
   -- 9. Status-herberekening: alle regels dicht → Ontvangen
   PERFORM annuleer_inkooporder_regel(v_regel_m, TRUE);
