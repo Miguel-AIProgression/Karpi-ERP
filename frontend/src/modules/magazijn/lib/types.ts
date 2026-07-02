@@ -71,7 +71,7 @@ export interface PickShipOrder {
   totaal_m2: number
   /** Som van `gewicht_kg × orderaantal` over de view-regels (mig 386) (kg).
    *  0 als gewicht nog onbekend. Indicatief op Pick & Ship; definitieve waarde
-   *  wordt door `create_zending_voor_order` op de zending gezet. */
+   *  wordt door `start_pickronden`/`start_deelzending` op de zending gezet. */
   totaal_gewicht_kg: number
   aantal_regels: number
   /** Mig 386: order-niveau-predicaat uit view `order_pickbaarheid`. Bron voor

@@ -2518,14 +2518,6 @@ END;
 $function$
 
 
-CREATE OR REPLACE FUNCTION public.create_zending_voor_order(p_order_id bigint, p_picker_id bigint)
- RETURNS bigint
- LANGUAGE sql
-AS $function$
-  SELECT start_pickronde(p_order_id, p_picker_id);
-$function$
-
-
 CREATE OR REPLACE FUNCTION public.dag_order_snij_buffer_werkdagen()
  RETURNS integer
  LANGUAGE sql
@@ -3732,252 +3724,6 @@ BEGIN
    WHERE order_id = ANY(p_order_ids)
      AND COALESCE(gefactureerd, 0) < orderaantal
      AND pick_backorder_sinds IS NULL AND pick_backorder_geannuleerd_op IS NULL;
-  SELECT COALESCE(SUM(bedrag), 0) INTO v_subtotaal
-    FROM factuur_regels WHERE factuur_id = v_factuur_id;
-  v_btw_bedrag := ROUND(v_subtotaal * v_btw_pct / 100, 2);
-  v_totaal     := v_subtotaal + v_btw_bedrag;
-
-  UPDATE facturen
-     SET subtotaal = v_subtotaal, btw_bedrag = v_btw_bedrag, totaal = v_totaal
-   WHERE id = v_factuur_id;
-
-  RETURN v_factuur_id;
-END;
-$function$
-
-
-CREATE OR REPLACE FUNCTION public.genereer_factuur_voor_bundel(p_zending_id bigint)
- RETURNS bigint
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_factuur_id           BIGINT;
-  v_factuur_nr           TEXT;
-  v_zending              zendingen%ROWTYPE;
-  v_debiteur             debiteuren%ROWTYPE;
-  v_btw_pct              NUMERIC(5,2);
-  v_btw_verlegd          BOOLEAN := FALSE;
-  v_betaaltermijn_dagen  INTEGER := 30;
-  v_aantal_te_factureren INTEGER;
-  v_order_ids            BIGINT[];
-  v_subtotaal            NUMERIC(12,2);
-  v_btw_bedrag           NUMERIC(12,2);
-  v_totaal               NUMERIC(12,2);
-  v_bundel_subtotaal     NUMERIC(12,2);
-  v_is_afhalen           BOOLEAN;
-  v_vk                   RECORD;
-BEGIN
-  IF p_zending_id IS NULL THEN
-    RAISE EXCEPTION 'p_zending_id is verplicht';
-  END IF;
-
-  SELECT * INTO v_zending FROM zendingen WHERE id = p_zending_id;
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'Zending % bestaat niet', p_zending_id;
-  END IF;
-
-  SELECT array_agg(zo.order_id ORDER BY zo.order_id)
-    INTO v_order_ids
-    FROM zending_orders zo
-   WHERE zo.zending_id = p_zending_id;
-
-  IF v_order_ids IS NULL OR array_length(v_order_ids, 1) IS NULL THEN
-    RAISE EXCEPTION 'Zending % heeft geen gekoppelde orders', p_zending_id;
-  END IF;
-
-  IF (SELECT COUNT(DISTINCT debiteur_nr) FROM orders WHERE id = ANY(v_order_ids)) > 1 THEN
-    RAISE EXCEPTION 'Bundel-zending % kruist debiteur-grens (orders %)',
-      p_zending_id, v_order_ids;
-  END IF;
-
-  SELECT * INTO v_debiteur FROM debiteuren
-   WHERE debiteur_nr = (SELECT DISTINCT debiteur_nr FROM orders WHERE id = ANY(v_order_ids));
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'Geen debiteur voor orders %', v_order_ids;
-  END IF;
-
-  v_btw_verlegd := COALESCE(v_debiteur.btw_verlegd_intracom, FALSE);
-  v_btw_pct     := effectief_btw_pct(v_debiteur.btw_verlegd_intracom, v_debiteur.btw_percentage);
-  v_betaaltermijn_dagen := betaaltermijn_dagen(v_debiteur.betaalconditie);
-
-  SELECT COUNT(*) INTO v_aantal_te_factureren
-    FROM order_regels orr
-   WHERE orr.order_id = ANY(v_order_ids)
-     AND COALESCE(orr.gefactureerd, 0) < orr.orderaantal
-     AND COALESCE(orr.artikelnr, '') NOT IN ('BUNDELKORTING', 'DREMPELKORTING');
-
-  IF v_aantal_te_factureren = 0 THEN
-    RAISE EXCEPTION 'Zending % heeft geen te-factureren regels', p_zending_id
-      USING ERRCODE = 'no_data_found';
-  END IF;
-
-  v_factuur_nr := volgend_nummer('FACT');
-
-  INSERT INTO facturen (
-    factuur_nr, debiteur_nr, factuurdatum, vervaldatum, status,
-    subtotaal, btw_percentage, btw_bedrag, totaal, btw_verlegd,
-    fact_naam, fact_adres, fact_postcode, fact_plaats, fact_land, btw_nummer
-  ) VALUES (
-    v_factuur_nr, v_debiteur.debiteur_nr, CURRENT_DATE,
-    CURRENT_DATE + v_betaaltermijn_dagen, 'Concept',
-    0, v_btw_pct, 0, 0, v_btw_verlegd,
-    COALESCE(v_debiteur.fact_naam, v_debiteur.naam),
-    COALESCE(v_debiteur.fact_adres, v_debiteur.adres),
-    COALESCE(v_debiteur.fact_postcode, v_debiteur.postcode),
-    COALESCE(v_debiteur.fact_plaats, v_debiteur.plaats),
-    v_debiteur.land,
-    v_debiteur.btw_nummer
-  ) RETURNING id INTO v_factuur_id;
-
-  -- Mig 406: klant_referentie van de orderregel wordt als snapshot meegenomen.
-  INSERT INTO factuur_regels (
-    factuur_id, order_id, order_regel_id, regelnummer,
-    artikelnr, omschrijving, omschrijving_2,
-    uw_referentie, order_nr,
-    klant_referentie,
-    aantal, prijs, korting_pct, bedrag, btw_percentage
-  )
-  SELECT
-    v_factuur_id, orr.order_id, orr.id, orr.regelnummer,
-    orr.artikelnr, orr.omschrijving, orr.omschrijving_2,
-    o.klant_referentie, o.order_nr,
-    orr.klant_referentie,
-    orr.orderaantal, orr.prijs, COALESCE(orr.korting_pct, 0), orr.bedrag, v_btw_pct
-  FROM order_regels orr
-  JOIN orders o ON o.id = orr.order_id
-  WHERE orr.order_id = ANY(v_order_ids)
-    AND COALESCE(orr.gefactureerd, 0) < orr.orderaantal
-    AND COALESCE(orr.artikelnr, '') NOT IN ('BUNDELKORTING', 'DREMPELKORTING')
-  ORDER BY orr.order_id, orr.regelnummer;
-
-  UPDATE order_regels
-     SET gefactureerd = orderaantal
-   WHERE order_id = ANY(v_order_ids)
-     AND COALESCE(gefactureerd, 0) < orderaantal
-     AND COALESCE(artikelnr, '') NOT IN ('BUNDELKORTING', 'DREMPELKORTING');
-
-  SELECT COALESCE(SUM(bedrag), 0)::NUMERIC(12,2)
-    INTO v_bundel_subtotaal
-    FROM factuur_regels
-   WHERE factuur_id = v_factuur_id
-     AND COALESCE(artikelnr, '') NOT IN ('VERZEND', 'BUNDELKORTING', 'DREMPELKORTING');
-
-  SELECT BOOL_OR(COALESCE(o.afhalen, FALSE))
-    INTO v_is_afhalen
-    FROM orders o
-   WHERE o.id = ANY(v_order_ids);
-
-  SELECT * INTO v_vk
-    FROM verzendkosten_voor_bundel(v_debiteur.debiteur_nr, v_bundel_subtotaal, v_is_afhalen);
-
-  DECLARE
-    v_aantal_verzend_regels   INTEGER;
-    v_verzendkosten_per_order NUMERIC(8,2);
-    v_korting_regelnr         INTEGER;
-    v_order_idx               INTEGER;
-    v_target_order_id         BIGINT;
-    v_target_order_nr         TEXT;
-    v_target_uw_referentie    TEXT;
-    v_admin_regelnr           INTEGER;
-  BEGIN
-    SELECT COUNT(*), COALESCE(MIN(bedrag), 0)
-      INTO v_aantal_verzend_regels, v_verzendkosten_per_order
-      FROM factuur_regels
-     WHERE factuur_id = v_factuur_id AND artikelnr = 'VERZEND';
-
-    SELECT COALESCE(MAX(regelnummer), 0) INTO v_korting_regelnr
-      FROM factuur_regels WHERE factuur_id = v_factuur_id;
-
-    -- 1) DREMPELKORTING op order[1] (drempel-cadeau)
-    IF v_vk.status = 'gratis_drempel' AND v_aantal_verzend_regels > 0 THEN
-      SELECT order_nr, klant_referentie
-        INTO v_target_order_nr, v_target_uw_referentie
-        FROM orders WHERE id = v_order_ids[1];
-
-      v_korting_regelnr := v_korting_regelnr + 1;
-      INSERT INTO factuur_regels (
-        factuur_id, order_id, order_regel_id, regelnummer,
-        artikelnr, omschrijving,
-        uw_referentie, order_nr,
-        aantal, prijs, korting_pct, bedrag, btw_percentage
-      ) VALUES (
-        v_factuur_id, v_order_ids[1], NULL, v_korting_regelnr,
-        'DREMPELKORTING',
-        format('Drempelkorting verzending — vanaf €%s',
-          to_char(v_debiteur.verzend_drempel, 'FM999999.00')),
-        v_target_uw_referentie, v_target_order_nr,
-        1, -v_verzendkosten_per_order, 0, -v_verzendkosten_per_order, v_btw_pct
-      );
-    END IF;
-
-    -- 2) BUNDELKORTING per order[2..N] (één −verzendkosten-regel per order)
-    IF v_verzendkosten_per_order > 0 AND v_aantal_verzend_regels > 1 THEN
-      FOR v_order_idx IN 2..array_length(v_order_ids, 1) LOOP
-        v_target_order_id := v_order_ids[v_order_idx];
-
-        SELECT order_nr, klant_referentie
-          INTO v_target_order_nr, v_target_uw_referentie
-          FROM orders WHERE id = v_target_order_id;
-
-        v_korting_regelnr := v_korting_regelnr + 1;
-        INSERT INTO factuur_regels (
-          factuur_id, order_id, order_regel_id, regelnummer,
-          artikelnr, omschrijving,
-          uw_referentie, order_nr,
-          aantal, prijs, korting_pct, bedrag, btw_percentage
-        ) VALUES (
-          v_factuur_id, v_target_order_id, NULL, v_korting_regelnr,
-          'BUNDELKORTING',
-          format('Bundelkorting verzending (gebundeld %s orders)',
-            v_aantal_verzend_regels),
-          v_target_uw_referentie, v_target_order_nr,
-          1, -v_verzendkosten_per_order, 0, -v_verzendkosten_per_order, v_btw_pct
-        );
-      END LOOP;
-    END IF;
-
-    -- 3a) DREMPELKORTING-orderregel op order[1]
-    IF v_vk.status = 'gratis_drempel'
-       AND v_aantal_verzend_regels > 0
-       AND v_verzendkosten_per_order > 0 THEN
-      SELECT COALESCE(MAX(regelnummer), 0) + 1 INTO v_admin_regelnr
-        FROM order_regels WHERE order_id = v_order_ids[1];
-      INSERT INTO order_regels (
-        order_id, regelnummer, artikelnr, omschrijving,
-        orderaantal, te_leveren, gefactureerd,
-        prijs, korting_pct, bedrag, gewicht_kg
-      ) VALUES (
-        v_order_ids[1], v_admin_regelnr, 'DREMPELKORTING',
-        format('Drempelkorting verzending — vanaf €%s',
-          to_char(v_debiteur.verzend_drempel, 'FM999999.00')),
-        1, 0, 1,
-        -v_verzendkosten_per_order, 0, -v_verzendkosten_per_order, 0
-      );
-    END IF;
-
-    -- 3b) BUNDELKORTING-orderregels op order[2..N]
-    IF v_verzendkosten_per_order > 0 AND v_aantal_verzend_regels > 1 THEN
-      FOR v_order_idx IN 2..array_length(v_order_ids, 1) LOOP
-        v_target_order_id := v_order_ids[v_order_idx];
-
-        SELECT COALESCE(MAX(regelnummer), 0) + 1 INTO v_admin_regelnr
-          FROM order_regels WHERE order_id = v_target_order_id;
-        INSERT INTO order_regels (
-          order_id, regelnummer, artikelnr, omschrijving,
-          orderaantal, te_leveren, gefactureerd,
-          prijs, korting_pct, bedrag, gewicht_kg
-        ) VALUES (
-          v_target_order_id, v_admin_regelnr, 'BUNDELKORTING',
-          format('Bundelkorting verzending (gebundeld %s orders)',
-            v_aantal_verzend_regels),
-          1, 0, 1,
-          -v_verzendkosten_per_order, 0, -v_verzendkosten_per_order, 0
-        );
-      END LOOP;
-    END IF;
-  END;
-
-  -- Eindtotalen.
   SELECT COALESCE(SUM(bedrag), 0) INTO v_subtotaal
     FROM factuur_regels WHERE factuur_id = v_factuur_id;
   v_btw_bedrag := ROUND(v_subtotaal * v_btw_pct / 100, 2);
@@ -7542,6 +7288,40 @@ END;
 $function$
 
 
+CREATE OR REPLACE FUNCTION public.markeer_hst_verstuurd(p_id bigint, p_extern_transport_order_id text, p_extern_tracking_number text, p_request_payload jsonb, p_response_payload jsonb, p_response_http_code integer)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_zending_id BIGINT;
+BEGIN
+  UPDATE hst_transportorders
+     SET status = 'Verstuurd',
+         extern_transport_order_id = p_extern_transport_order_id,
+         extern_tracking_number = p_extern_tracking_number,
+         request_payload = p_request_payload,
+         response_payload = p_response_payload,
+         response_http_code = p_response_http_code,
+         sent_at = now(),
+         error_msg = NULL
+   WHERE id = p_id
+   RETURNING zending_id INTO v_zending_id;
+
+  -- Tracking + status doorzetten naar zending
+  IF v_zending_id IS NOT NULL THEN
+    UPDATE zendingen
+       SET track_trace = COALESCE(p_extern_tracking_number, p_extern_transport_order_id),
+           status = CASE
+             WHEN status = 'Klaar voor verzending' THEN 'Onderweg'::zending_status
+             ELSE status
+           END
+     WHERE id = v_zending_id;
+  END IF;
+END;
+$function$
+
+
 CREATE OR REPLACE FUNCTION public.markeer_hst_verstuurd(p_id bigint, p_extern_transport_order_id text, p_extern_tracking_number text, p_request_payload jsonb, p_response_payload jsonb, p_response_http_code integer, p_pdf_path text DEFAULT NULL::text, p_pdf_uploaded_at timestamp with time zone DEFAULT NULL::timestamp with time zone)
  RETURNS void
  LANGUAGE plpgsql
@@ -7565,40 +7345,6 @@ BEGIN
    RETURNING zending_id INTO v_zending_id;
 
   -- Tracking + status doorzetten naar zending (ongewijzigd t.o.v. mig 171)
-  IF v_zending_id IS NOT NULL THEN
-    UPDATE zendingen
-       SET track_trace = COALESCE(p_extern_tracking_number, p_extern_transport_order_id),
-           status = CASE
-             WHEN status = 'Klaar voor verzending' THEN 'Onderweg'::zending_status
-             ELSE status
-           END
-     WHERE id = v_zending_id;
-  END IF;
-END;
-$function$
-
-
-CREATE OR REPLACE FUNCTION public.markeer_hst_verstuurd(p_id bigint, p_extern_transport_order_id text, p_extern_tracking_number text, p_request_payload jsonb, p_response_payload jsonb, p_response_http_code integer)
- RETURNS void
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-DECLARE
-  v_zending_id BIGINT;
-BEGIN
-  UPDATE hst_transportorders
-     SET status = 'Verstuurd',
-         extern_transport_order_id = p_extern_transport_order_id,
-         extern_tracking_number = p_extern_tracking_number,
-         request_payload = p_request_payload,
-         response_payload = p_response_payload,
-         response_http_code = p_response_http_code,
-         sent_at = now(),
-         error_msg = NULL
-   WHERE id = p_id
-   RETURNING zending_id INTO v_zending_id;
-
-  -- Tracking + status doorzetten naar zending
   IF v_zending_id IS NOT NULL THEN
     UPDATE zendingen
        SET track_trace = COALESCE(p_extern_tracking_number, p_extern_transport_order_id),
@@ -10825,28 +10571,6 @@ END;
 $function$
 
 
-CREATE OR REPLACE FUNCTION public.start_pickronde(p_order_id bigint, p_picker_id bigint)
- RETURNS bigint
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_eerste_id BIGINT;
-BEGIN
-  SELECT zending_id INTO v_eerste_id
-    FROM start_pickronden(ARRAY[p_order_id], p_picker_id, '{}'::BIGINT[])
-   ORDER BY zending_id ASC
-   LIMIT 1;
-
-  IF v_eerste_id IS NULL THEN
-    RAISE EXCEPTION 'Order % heeft geen pickbare regels (geen zending aangemaakt)', p_order_id
-      USING ERRCODE = 'no_data_found';
-  END IF;
-
-  RETURN v_eerste_id;
-END;
-$function$
-
-
 CREATE OR REPLACE FUNCTION public.start_pickronden(p_order_ids bigint[], p_picker_id bigint, p_force_solo_ids bigint[] DEFAULT '{}'::bigint[])
  RETURNS TABLE(zending_id bigint, zending_nr text, vervoerder_code text, aantal_regels integer, aantal_orders integer, is_nieuw boolean)
  LANGUAGE plpgsql
@@ -11111,134 +10835,6 @@ BEGIN
       p_order_id            := v_order_id,
       p_actor_medewerker_id := p_picker_id
     );
-  END LOOP;
-END;
-$function$
-
-
-CREATE OR REPLACE FUNCTION public.start_pickronden_voor_order(p_order_id bigint, p_picker_id bigint)
- RETURNS TABLE(zending_id bigint, zending_nr text, vervoerder_code text, aantal_regels integer, is_nieuw boolean)
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_order       orders%ROWTYPE;
-  v_groep       RECORD;
-  v_zending_id  BIGINT;
-  v_zending_nr  TEXT;
-  v_is_nieuw    BOOLEAN;
-BEGIN
-  PERFORM _valideer_picker(p_picker_id);
-
-  SELECT * INTO v_order FROM orders WHERE id = p_order_id;
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'Order % bestaat niet', p_order_id;
-  END IF;
-
-  -- Eindstatus-guard (softened voor deelzendingen, mig 413):
-  -- Blokkeer alleen als ALLE pickbare regels al in een eindstatus-zending zitten
-  -- zodat er feitelijk niets meer te picken valt. Een deelzending in eindstatus
-  -- moet de rest van de order NIET blokkeren.
-  IF NOT EXISTS (
-    SELECT 1
-      FROM orderregel_pickbaarheid op
-     WHERE op.order_id = p_order_id
-       AND op.is_pickbaar = TRUE
-       AND NOT EXISTS (
-         SELECT 1 FROM zending_regels zr
-           JOIN zendingen z ON z.id = zr.zending_id
-          WHERE zr.order_regel_id = op.order_regel_id
-            AND z.status IN ('Klaar voor verzending', 'Onderweg', 'Afgeleverd')
-       )
-  ) THEN
-    RAISE EXCEPTION
-      'Order % heeft geen pickbare regels meer buiten voltooide zendingen.',
-      p_order_id
-      USING ERRCODE = 'invalid_parameter_value';
-  END IF;
-
-  -- Per effectieve vervoerder: 1 zending.
-  -- Skip regels die al in een ACTIEVE (nog niet Afgeleverd) zending zitten —
-  -- dit voorkomt dubbel picken na een deelzending.
-  FOR v_groep IN
-    WITH per_regel AS (
-      SELECT evpo.*
-        FROM effectieve_vervoerder_per_orderregel(p_order_id) evpo
-       WHERE NOT EXISTS (
-         -- Regel zit al in een actieve zending (ook eindstatus-zending)
-         SELECT 1 FROM zending_regels zr
-           JOIN zendingen z ON z.id = zr.zending_id
-          WHERE zr.order_regel_id = evpo.orderregel_id
-            AND z.status NOT IN ('Afgeleverd')
-       )
-    )
-    SELECT
-      pr.effectief_code  AS vervoerder_code,
-      MIN(pr.effectief_service) AS service_code,
-      array_agg(pr.orderregel_id ORDER BY pr.orderregel_id) AS orderregel_ids,
-      COUNT(*)::INTEGER AS aantal_regels
-    FROM per_regel pr
-    GROUP BY pr.effectief_code
-    ORDER BY pr.effectief_code NULLS FIRST
-  LOOP
-    -- Geen regels in deze groep (alle gefilterd)? Skip.
-    IF v_groep.aantal_regels = 0 THEN CONTINUE; END IF;
-
-    -- Bestaande Picken-zending voor deze (order, vervoerder)? Hergebruiken.
-    SELECT z.id, z.zending_nr INTO v_zending_id, v_zending_nr
-      FROM zendingen z
-     WHERE z.order_id = p_order_id
-       AND z.status = 'Picken'
-       AND z.vervoerder_code IS NOT DISTINCT FROM v_groep.vervoerder_code
-       AND (z.is_deelzending = FALSE OR z.is_deelzending IS NULL)
-     ORDER BY z.id DESC LIMIT 1;
-
-    IF v_zending_id IS NOT NULL THEN
-      v_is_nieuw := FALSE;
-      UPDATE zendingen SET picker_id = p_picker_id WHERE id = v_zending_id;
-      PERFORM genereer_zending_colli(v_zending_id);
-    ELSE
-      v_is_nieuw := TRUE;
-      v_zending_nr := volgend_nummer('ZEND');
-
-      INSERT INTO zendingen (
-        zending_nr, order_id, status, picker_id, vervoerder_code, service_code,
-        afl_naam, afl_adres, afl_postcode, afl_plaats, afl_land,
-        verzenddatum, aantal_colli, totaal_gewicht_kg,
-        is_deelzending
-      ) VALUES (
-        v_zending_nr, p_order_id, 'Picken', p_picker_id,
-        v_groep.vervoerder_code, v_groep.service_code,
-        v_order.afl_naam, v_order.afl_adres,
-        v_order.afl_postcode, v_order.afl_plaats, v_order.afl_land,
-        CURRENT_DATE,
-        (SELECT COALESCE(SUM(COALESCE(ore.orderaantal, 0)), 0)::INTEGER
-           FROM order_regels ore WHERE ore.id = ANY(v_groep.orderregel_ids)),
-        (SELECT NULLIF(
-                  ROUND(COALESCE(SUM(COALESCE(ore.gewicht_kg, 0)
-                                   * COALESCE(ore.orderaantal, 0)), 0), 2), 0)
-           FROM order_regels ore WHERE ore.id = ANY(v_groep.orderregel_ids)),
-        FALSE
-      ) RETURNING id INTO v_zending_id;
-
-      INSERT INTO zending_regels (zending_id, order_regel_id, aantal)
-      SELECT v_zending_id, ore.id, ore.orderaantal
-        FROM order_regels ore
-       WHERE ore.id = ANY(v_groep.orderregel_ids)
-         AND COALESCE(ore.orderaantal, 0) > 0;
-
-      PERFORM genereer_zending_colli(v_zending_id);
-    END IF;
-
-    -- Zending ook in M2M-tabel (mig 222 canoniek)
-    INSERT INTO zending_orders (zending_id, order_id)
-    VALUES (v_zending_id, p_order_id)
-    ON CONFLICT DO NOTHING;
-
-    RETURN QUERY SELECT
-      v_zending_id, v_zending_nr,
-      v_groep.vervoerder_code,
-      v_groep.aantal_regels,
-      v_is_nieuw;
   END LOOP;
 END;
 $function$
