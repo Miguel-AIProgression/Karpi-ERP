@@ -37,6 +37,13 @@ export {
   type BoekOntvangstRollenInput,
   type BoekOntvangstInput,
 } from './hooks/use-boek-ontvangst'
+export {
+  useVoegRegelToe,
+  useWijzigRegel,
+  useAnnuleerRegel,
+  useVerwijderRegel,
+} from './hooks/use-regel-mutaties'
+export { isClaimVloerFout } from './queries/regel-mutaties'
 
 // ---------------------------------------------------------------------------
 // Cache seam (cross-Module invalidation — ADR-0017, Ingreep 4)
